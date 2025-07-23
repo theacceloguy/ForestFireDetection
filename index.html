@@ -34,6 +34,28 @@
       border-radius: 10px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
+    #controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #sensorSelect {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 1em;
+      background-color: #f9f9f9;
+      transition: border 0.3s;
+      outline: none;
+      cursor: pointer;
+    }
+    #sensorSelect:hover {
+      border-color: #4CAF50;
+    }
+    #sensorSelect:focus {
+      border-color: #4CAF50;
+      box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
     #map {
       height: 250px;
       width: 95%;
@@ -111,11 +133,9 @@
       <div>
         <div id="data">
           <div class="label">Real-Time Data</div>
-          <p>Temperature: <span id="temp">--</span> °C</p>
-          <p>Humidity: <span id="hum">--</span> %</p>
-          <p>Pressure: <span id="pres">--</span> hPa</p>
-          <p>Gas Resistance: <span id="gas">--</span> kΩ</p>
-          <p>Altitude: <span id="alt">--</span> m</p>
+          <p>TVOC: <span id="tvoc">--</span> ppb</p>
+          <p>eCO₂: <span id="eco2">--</span> ppm</p>
+          <p>AQI: <span id="aqi">--</span></p>
           <p>Fire Detected: <span id="fire">--</span></p>
           <p>Last Updated: <span id="updated">--</span></p>
         </div>
@@ -144,8 +164,8 @@
       data: {
         labels: [],
         datasets: [{
-          label: 'Temperature (°C)',
-          borderColor: 'red',
+          label: 'AQI',
+          borderColor: 'orange',
           data: [],
           tension: 0.2,
         }]
@@ -183,13 +203,12 @@
       db.ref("Sensors/" + id + "/latest").on("value", snap => {
         const data = snap.val();
         if (!data) return;
-        document.getElementById("temp").innerText = data.Temperature;
-        document.getElementById("hum").innerText = data.Humidity;
-        document.getElementById("pres").innerText = data.Pressure_hPa;
-        document.getElementById("gas").innerText = data.GasResistance_KOhm;
-        document.getElementById("alt").innerText = data.Altitude_m;
+
+        document.getElementById("tvoc").innerText = data.TVOC_ppb ?? "--";
+        document.getElementById("eco2").innerText = data.eCO2_ppm ?? "--";
+        document.getElementById("aqi").innerText = data.AQI ?? "--";
         document.getElementById("fire").innerText = data.FireDetected ? 'Yes' : 'No';
-        const t = new Date(data.timestamp * 1000);
+        const t = new Date((data.timestamp ?? Date.now()) * 1000);
         document.getElementById("updated").innerText = t.toLocaleString();
 
         if (data.Latitude && data.Longitude) {
@@ -214,7 +233,7 @@
         snap.forEach(child => {
           const d = child.val();
           labels.push(new Date(d.timestamp * 1000).toLocaleTimeString());
-          data.push(d.Temperature);
+          data.push(d.AQI);
         });
         tempChart.data.labels = labels;
         tempChart.data.datasets[0].data = data;
