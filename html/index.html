@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Forest Fire Sensor Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+    }
+    header {
+      background: #4CAF50;
+      color: white;
+      padding: 10px;
+      text-align: center;
+      font-size: 1.5em;
+    }
+    #loginPage, #dashboardPage {
+      display: none;
+    }
+    #container {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 20px;
+      padding: 20px;
+      height: calc(100vh - 80px);
+      box-sizing: border-box;
+    }
+    #controls, #map, #data, #chart, #alerts {
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #map {
+      height: 250px;
+      width: 95%;
+      margin-top: 20px;
+    }
+    #alerts {
+      margin-top: 20px;
+    }
+    canvas {
+      width: 100% !important;
+      height: 300px !important;
+    }
+    .label {
+      font-weight: bold;
+    }
+    #loginBox {
+      max-width: 300px;
+      margin: 100px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    #loginBox input {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      box-sizing: border-box;
+    }
+    #loginBox button {
+      width: 100%;
+      padding: 10px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    @media (max-width: 768px) {
+      #container {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+</head>
+<body>
+  <div id="loginPage">
+    <div id="loginBox">
+      <h2>Login</h2>
+      <input type="text" id="username" placeholder="Username">
+      <input type="password" id="password" placeholder="Password">
+      <button onclick="login()">Login</button>
+      <p id="loginError" style="color:red;"></p>
+    </div>
+  </div>
+
+  <div id="dashboardPage">
+    <header>Forest Fire Sensor Dashboard</header>
+    <div id="container">
+      <div>
+        <div id="controls">
+          <label class="label">Select Sensor:</label>
+          <select id="sensorSelect"></select>
+        </div>
+        <div id="map"></div>
+        <div id="alerts">
+          <div class="label">Alerts:</div>
+          <ul id="alertList"></ul>
+        </div>
+      </div>
+      <div>
+        <div id="data">
+          <div class="label">Real-Time Data</div>
+          <p>Temperature: <span id="temp">--</span> °C</p>
+          <p>Humidity: <span id="hum">--</span> %</p>
+          <p>Pressure: <span id="pres">--</span> hPa</p>
+          <p>Gas Resistance: <span id="gas">--</span> kΩ</p>
+          <p>Altitude: <span id="alt">--</span> m</p>
+          <p>Fire Detected: <span id="fire">--</span></p>
+          <p>Last Updated: <span id="updated">--</span></p>
+        </div>
+        <div id="chart">
+          <canvas id="tempChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDO1PYg0pSfvg54cY_q4dCwLA4VvdCaEYg",
+      databaseURL: "https://forest-fire-detection-97ee1-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const sensorSelect = document.getElementById('sensorSelect');
+    const tempChartCtx = document.getElementById('tempChart').getContext('2d');
+    let map = L.map('map').setView([19.07, 72.87], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let marker = null;
+    let tempChart = new Chart(tempChartCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Temperature (°C)',
+          borderColor: 'red',
+          data: [],
+          tension: 0.2,
+        }]
+      }
+    });
+
+    function login() {
+      const user = document.getElementById("username").value;
+      const pass = document.getElementById("password").value;
+      if (user === "admin" && pass === "password") {
+        document.getElementById("loginPage").style.display = "none";
+        document.getElementById("dashboardPage").style.display = "block";
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 500);
+      } else {
+        document.getElementById("loginError").innerText = "Invalid credentials!";
+      }
+    }
+
+    db.ref("Sensors").on("value", snap => {
+      sensorSelect.innerHTML = '';
+      for (let id in snap.val()) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.text = id;
+        sensorSelect.appendChild(opt);
+      }
+      if (sensorSelect.options.length > 0) loadSensor(sensorSelect.value);
+    });
+
+    sensorSelect.addEventListener("change", () => loadSensor(sensorSelect.value));
+
+    function loadSensor(id) {
+      db.ref("Sensors/" + id + "/latest").on("value", snap => {
+        const data = snap.val();
+        if (!data) return;
+        document.getElementById("temp").innerText = data.Temperature;
+        document.getElementById("hum").innerText = data.Humidity;
+        document.getElementById("pres").innerText = data.Pressure_hPa;
+        document.getElementById("gas").innerText = data.GasResistance_KOhm;
+        document.getElementById("alt").innerText = data.Altitude_m;
+        document.getElementById("fire").innerText = data.FireDetected ? 'Yes' : 'No';
+        const t = new Date(data.timestamp * 1000);
+        document.getElementById("updated").innerText = t.toLocaleString();
+
+        if (data.Latitude && data.Longitude) {
+          if (marker) map.removeLayer(marker);
+          marker = L.marker([data.Latitude, data.Longitude]).addTo(map);
+          map.setView([data.Latitude, data.Longitude], 13);
+        }
+      });
+
+      db.ref("Sensors/" + id + "/alerts").on("value", snap => {
+        const ul = document.getElementById("alertList");
+        ul.innerHTML = '';
+        snap.forEach(child => {
+          const li = document.createElement("li");
+          li.innerText = child.val();
+          ul.appendChild(li);
+        });
+      });
+
+      db.ref("Sensors/" + id + "/history").limitToLast(20).on("value", snap => {
+        const labels = [], data = [];
+        snap.forEach(child => {
+          const d = child.val();
+          labels.push(new Date(d.timestamp * 1000).toLocaleTimeString());
+          data.push(d.Temperature);
+        });
+        tempChart.data.labels = labels;
+        tempChart.data.datasets[0].data = data;
+        tempChart.update();
+      });
+    }
+
+    document.getElementById("loginPage").style.display = "block";
+  </script>
+</body>
+</html>
